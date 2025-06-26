@@ -1,0 +1,46 @@
+from devAbSplice.data_kaesmann import tissues_kaesmann
+
+DATA_DIR = config['DATA_DIR']
+
+rule devAS_events:
+    input:
+        SI_data = config['Supplementary_Data_9_kaessmann'],
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 32000
+    output:
+        devAS_events = os.path.join(DATA_DIR, 'results/devAbSplice/devAS/devAS.csv'),
+    script:
+        './devAS_events.py'
+
+
+rule devAS_events_bed:
+    input:
+        devAS_events = os.path.join(DATA_DIR, 'results/devAbSplice/devAS/devAS.csv'),
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 32000
+    output:
+        devAS_events_bed = os.path.join(DATA_DIR, 'results/devAbSplice/devAS_bed/devAS_{chrom}.bed'),
+    script:
+        './devAS_events_bed.py'
+
+
+rule variant_combinator:
+    input:
+        fasta = config['fasta'],
+        bed = os.path.join(DATA_DIR, 'results/devAbSplice/devAS_bed/devAS_{chrom}.bed'),
+    # conda: 'variant_combinator'
+    conda: "../../environment_variant_combinator.yaml"
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 32000
+    output:
+        vcf = os.path.join(DATA_DIR, 'results/devAbSplice/devAS_vcf/devAS_{chrom}.vcf'),
+    script:
+        './variant_combinator.py'
+
+
+rule all_devAS_events:
+    input:
+        expand(rules.devAS_events_bed.output.devAS_events_bed,
+            chrom = config['chroms']),
+        expand(rules.variant_combinator.output.vcf, 
+            chrom = config['chroms']),

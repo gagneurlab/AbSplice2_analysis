@@ -1,0 +1,59 @@
+import os
+from devAbSplice.data_kaesmann import *  # provides `species_kaesmann`, `download_rna_seq`
+
+# DATA_PATH = config['root_path_bam_files']
+DATA_PATH = config['DATA_DIR']
+print(DATA_PATH)
+
+bam_unsorted_root = os.path.join(DATA_PATH, 'RNA_seq_files/unsorted/')
+
+# Collect BAM base names (no '.bam') per species
+bamfile_pairs = []
+for species in species_kaesmann:
+    species_dir = os.path.join(bam_unsorted_root, species)
+    if os.path.exists(species_dir):
+        bams = [x for x in os.listdir(species_dir) if x.endswith('.bam')]
+        bamfile_pairs.extend([(species, b.replace('.bam', '')) for b in bams])
+
+# Use __ separator in wildcard-based paths
+species_list = [s for s, _ in bamfile_pairs]
+bamfile_list = [b for _, b in bamfile_pairs]
+
+sorted_bam_files = expand(
+    os.path.join(DATA_PATH, 'RNA_seq_files/sorted/{species}/{bamfile}.bam'),
+    zip,
+    species=species_list,
+    bamfile=bamfile_list
+)
+
+indexed_bam_files = [f"{f}.bai" for f in sorted_bam_files]
+
+
+rule sort_bam_files:
+    input:
+        bamfile = os.path.join(DATA_PATH, 'RNA_seq_files/unsorted/{species}/{bamfile}.bam'),
+    output:
+        bamfile_sorted = os.path.join(DATA_PATH, 'RNA_seq_files/sorted/{species}/{bamfile}.bam'),
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 16000,
+    shell:
+        'samtools sort {input.bamfile} -o {output.bamfile_sorted}'
+
+
+rule index_bam_files:
+    input:
+        bamfile = os.path.join(DATA_PATH, 'RNA_seq_files/sorted/{species}/{bamfile}.bam'),
+    output:
+        bamfile_indexed = os.path.join(DATA_PATH, 'RNA_seq_files/sorted/{species}/{bamfile}.bam.bai'),
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 16000,
+    shell:
+        'samtools index {input.bamfile} {output.bamfile_indexed}'
+
+# print("Sorted BAM files:", sorted_bam_files[0])
+
+rule all_bamfiles:
+    input:
+        expand(rules.download_bam_files.output.bamfile_dir, species='human'),
+        sorted_bam_files,
+        indexed_bam_files

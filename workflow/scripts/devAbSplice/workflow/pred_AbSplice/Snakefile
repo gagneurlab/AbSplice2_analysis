@@ -1,0 +1,193 @@
+import os
+import yaml
+from os import listdir
+from os.path import isfile, join
+import pathlib
+from devAbSplice.data_kaesmann import *
+from devAbSplice.data_gtex import *
+
+DATA_DIR = config['DATA_DIR']
+
+rule mmsplice_splicemap_devAS:
+    input:
+        vcf = os.path.join(DATA_DIR, 'results/devAbSplice/devAS_vcf/devAS_{chrom}.vcf'),
+        fasta = config['fasta'],
+        splicemap_5 = expand(os.path.join(
+            DATA_DIR, 'results/devAbSplice/junction_annotation/splicemap/splicemap_tissue_time/',
+            'delta_t={delta_t}/splicemap_tissue={tissue}_timepoint={timepoint}_psi5.csv.gz'),
+            tissue='{tissue}', delta_t='{delta_t}', timepoint=timepoints_kaesmann),
+        splicemap_3 = expand(os.path.join(
+            DATA_DIR, 'results/devAbSplice/junction_annotation/splicemap/splicemap_tissue_time/',
+            'delta_t={delta_t}/splicemap_tissue={tissue}_timepoint={timepoint}_psi3.csv.gz'),
+            tissue='{tissue}', delta_t='{delta_t}', timepoint=timepoints_kaesmann),
+    # conda: './envs/environment_absplice.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 128000,
+        threads = 4
+    output:
+        result = directory(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/mmsplice_splicemap/devSpliceMaps/delta_t={delta_t}/{chrom}_MMSplice_SpliceMap_tissue={tissue}.parquet'))
+    script:
+        "./mmsplice_splicemap.py"
+
+
+genome = 'hg19'
+def splicemap5_GTEx(wildcards):
+    tissue = wildcards.tissue
+    splicemaps = []
+    for t in gtex_tissues:
+        if t in kaesmann_gtex_map[tissue]:
+            splicemaps.append(os.path.join(DATA_DIR, 'results/splicemap/{genome}/{tissue_gtex}_splicemap_psi5.csv.gz').format(tissue_gtex=t, genome=genome))
+    splicemaps = [str(x) for x in splicemaps]
+    return splicemaps
+
+def splicemap3_GTEx(wildcards):
+    tissue = wildcards.tissue
+    splicemaps = []
+    for t in gtex_tissues:
+        if t in kaesmann_gtex_map[tissue]:
+            splicemaps.append(os.path.join(DATA_DIR, 'results/splicemap/{genome}/{tissue_gtex}_splicemap_psi3.csv.gz').format(tissue_gtex=t, genome=genome))
+    splicemaps = [str(x) for x in splicemaps]
+    return splicemaps
+
+
+rule mmsplice_splicemap_GTEx:
+    input:
+        vcf = os.path.join(DATA_DIR, 'results/devAbSplice/devAS_vcf/devAS_{chrom}.vcf'),
+        fasta = config['fasta'],
+        splicemap_5 = splicemap5_GTEx,
+        splicemap_3 = splicemap3_GTEx,
+    # conda: './envs/environment_absplice.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 128000,
+        threads = 4
+    output:
+        result = directory(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/mmsplice_splicemap/GTExSpliceMaps/{chrom}_MMSplice_SpliceMap_tissue={tissue}.parquet'))
+    script:
+        "./mmsplice_splicemap.py"
+
+
+# chromosomes_spliceai = [
+#     '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', 
+#     '14', '15', '16', '17', '18', '19', '20', '21', '22', 'X', 'Y']
+# def dict_path(wildcards):
+#     paths = {}
+#     for chr in chromosomes_spliceai:
+#         paths[chr] = config['spliceai_rocksdb'].format(chrom=chr)
+#     return paths
+
+genome_dict = {
+    'hg19': 'grch37',
+    'hg38': 'grch38',
+}
+
+def dict_path(wildcards):
+    paths = {}
+    genome =config['genome']
+    for chr in config['chroms']:
+        paths[chr] = config_precomputed['spliceai']['db'].format(genome=genome_dict[genome], chrom=chr)
+    return paths
+
+rule spliceai:
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 125000,
+        threads = 1,
+        gpu = 1,
+    input:
+        vcf = os.path.join(DATA_DIR, 'results/devAbSplice/devAS_vcf/devAS_{chrom}.vcf'),
+        fasta = config['fasta'],
+    params:
+        db_path = dict_path,
+        lookup_only = False,
+        genome = genome_dict[config['genome']],
+    conda:
+        "./envs/environment_spliceai.yaml"
+    output:
+        result = directory(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/spliceai/{chrom}_SpliceAI.parquet'))
+    script:
+        "./spliceai.py"
+
+
+rule absplice_dna_devAS:
+    input:
+        mmsplice_splicemap = os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/mmsplice_splicemap/devSpliceMaps/delta_t={delta_t}/{chrom}_MMSplice_SpliceMap_tissue={tissue}.parquet'),
+        spliceai = os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/spliceai/{chrom}_SpliceAI.parquet'),
+    params:
+        gene_map = config['gene_map'],
+        absplice_dna_model = config_precomputed['absplice']['dna']
+    # conda: './envs/environment_absplice.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 128000,
+        threads = 4
+    output:
+        absplice_dna = directory(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/absplice_dna/devSpliceMaps/delta_t={delta_t}/{chrom}_AbSplice_DNA_tissue={tissue}.parquet'))
+    script:
+        "./absplice_dna.py"
+
+
+rule absplice_dna_GTEx:
+    input:
+        mmsplice_splicemap = os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/mmsplice_splicemap/GTExSpliceMaps/{chrom}_MMSplice_SpliceMap_tissue={tissue}.parquet'),
+        spliceai = os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/spliceai/{chrom}_SpliceAI.parquet'),
+    params:
+        gene_map = config['gene_map'],
+        absplice_dna_model = config_precomputed['absplice']['dna']
+    # conda: './envs/environment_absplice.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 64000,
+        threads = 4
+    output:
+        absplice_dna = directory(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/absplice_dna/GTExSpliceMaps/{chrom}_AbSplice_DNA_tissue={tissue}.parquet'))
+    script:
+        "./absplice_dna.py"
+
+
+rule all_predict_absplice_dna:
+    input:
+        expand(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/mmsplice_splicemap/devSpliceMaps/delta_t={delta_t}/{chrom}_MMSplice_SpliceMap_tissue={tissue}.parquet'),
+            delta_t=[0,1],
+            chrom=config['chroms'],
+            tissue=tissues_kaesmann,
+        ),
+        expand(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/mmsplice_splicemap/GTExSpliceMaps/{chrom}_MMSplice_SpliceMap_tissue={tissue}.parquet'),
+            chrom=config['chroms'],
+            tissue=[*tissues_kaesmann, 'other_gtex_tissues'],
+        ),
+        expand(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/absplice_dna/devSpliceMaps/delta_t={delta_t}/{chrom}_AbSplice_DNA_tissue={tissue}.parquet'),
+            delta_t=[0,1],
+            chrom=config['chroms'],
+            tissue=tissues_kaesmann,
+        ),
+        expand(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/absplice_dna/GTExSpliceMaps/{chrom}_AbSplice_DNA_tissue={tissue}.parquet'),
+            chrom=config['chroms'],
+            tissue=[*tissues_kaesmann, 'other_gtex_tissues'],
+        )
+
+
+# del splicemap5
+# del splicemap3

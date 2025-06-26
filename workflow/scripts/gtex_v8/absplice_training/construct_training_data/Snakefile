@@ -1,0 +1,96 @@
+rule construct_training_input:
+    input:
+        mmsplice = OUTPUT_DIR_SPLICING + config_static['splicing_pred']['levels']['raw'] + config_static['splicing_pred']['models']['mmsplice_splicemap'],
+        pangolin = OUTPUT_DIR_SPLICING + config_static['splicing_pred']['levels']['raw'] + config_static['splicing_pred']['models']['pangolin'],
+        splicemap_5 = expand(config_static['junction_annotation']['splicemap']['psi5'],
+                            genome=config['genome'], tissue='{tissue}')[0],
+        splicemap_3 = expand(config_static['junction_annotation']['splicemap']['psi3'],
+                            genome=config['genome'], tissue='{tissue}')[0],
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 32000,
+        threads = 4
+    output:
+        gtex_train = '../../../../data/results/gtex_v8/training_data/training_subset/gtex_v8_training_{tissue}_{vcf_id}.parquet',
+        gtex_complete = '../../../../data/results/gtex_v8/training_data/complete_data/gtex_v8_complete_{tissue}_{vcf_id}.parquet',
+    script:
+        './construct_training_data.py'
+
+
+rule combine_with_universe_training_data:
+    input:
+        training_data = '../../../../data/results/gtex_v8/training_data/training_subset/gtex_v8_training_{tissue}_{vcf_id}.parquet',
+        universe = OUTPUT_DIR_BENCHMARK + config_static['benchmark']['universe'],
+        outliers = OUTPUT_DIR_OUTLIER + config_static['outlier_ground_truth']['combine_gene_junction']['variant_nearest_outlier']['parts_rare_var_dist_variant_level'], 
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 32000,
+        threads = 4
+    params:
+        subset_df = True
+    output:
+        training_data_combined = '../../../../data/results/gtex_v8/training_data/fraser_version={fraser_version}/deltaPsi={delta_psi_cutoff}/pval={padjust_cutoff}/totalCounts={totalCounts_cutoff}/training_subset_with_outliers/gtex_v8_training_{tissue}_{vcf_id}.parquet',
+    script:
+        './combine_with_universe.py'
+
+
+rule combine_with_universe_all_junctions_data:
+    input:
+        training_data = '../../../../data/results/gtex_v8/training_data/complete_data/gtex_v8_complete_{tissue}_{vcf_id}.parquet',
+        universe = OUTPUT_DIR_BENCHMARK + config_static['benchmark']['universe'],
+        outliers = OUTPUT_DIR_OUTLIER + config_static['outlier_ground_truth']['combine_gene_junction']['variant_nearest_outlier']['parts_rare_var_dist_variant_level'], 
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 32000,
+        threads = 4
+    params:
+        subset_df = False
+    output:
+        training_data_combined = '../../../../data/results/gtex_v8/training_data/fraser_version={fraser_version}/deltaPsi={delta_psi_cutoff}/pval={padjust_cutoff}/totalCounts={totalCounts_cutoff}/all_junctions_with_outliers/gtex_v8_training_{tissue}_{vcf_id}.parquet',
+    script:
+        './combine_with_universe.py'
+
+
+import re
+valid_combinations = config['filtering_params']['outliers']['combinations']
+
+def filter_wildcards_outliers(path_list, valid_combinations):
+    """Filters paths to include only valid combinations of delta_psi_cutoff, padjust_cutoff, and totalCounts_cutoff."""
+    correct_paths = []
+    
+    for path in path_list:
+        match = re.search(
+            r"deltaPsi=(?P<delta_psi_cutoff>[\d.]+)/pval=(?P<padjust_cutoff>[\d.]+)/totalCounts=(?P<totalCounts_cutoff>[\d.]+)", 
+            path
+        )
+        
+        if match:
+            delta_psi_cutoff = float(match.group("delta_psi_cutoff"))
+            padjust_cutoff = float(match.group("padjust_cutoff"))
+            totalCounts_cutoff = float(match.group("totalCounts_cutoff"))
+
+            # Check if the extracted wildcards match any valid combination
+            if any(
+                c["delta_psi_cutoff"] == delta_psi_cutoff and
+                c["padjust_cutoff"] == padjust_cutoff and
+                c["totalCounts_cutoff"] == totalCounts_cutoff
+                for c in valid_combinations
+            ):
+                correct_paths.append(path)
+    
+    return correct_paths
+
+
+rule all_construct_training_data:
+    input:
+        filter_wildcards_outliers(expand(rules.combine_with_universe_all_junctions_data.output,
+                tissue=config['tissues'], vcf_id=config['chroms'],
+                fraser_version=config['fraser_version'], 
+                delta_psi_cutoff=[c['delta_psi_cutoff'] for c in valid_combinations],
+                padjust_cutoff=[c['padjust_cutoff'] for c in valid_combinations],
+                totalCounts_cutoff=[c['totalCounts_cutoff'] for c in valid_combinations],
+            ), valid_combinations),
+        filter_wildcards_outliers(expand(rules.combine_with_universe_training_data.output,
+                tissue=config['tissues'], vcf_id=config['chroms'],
+                fraser_version=config['fraser_version'], 
+                delta_psi_cutoff=[c['delta_psi_cutoff'] for c in valid_combinations],
+                padjust_cutoff=[c['padjust_cutoff'] for c in valid_combinations],
+                totalCounts_cutoff=[c['totalCounts_cutoff'] for c in valid_combinations],
+            ), valid_combinations),

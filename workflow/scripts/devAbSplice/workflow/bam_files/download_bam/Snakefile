@@ -1,0 +1,19 @@
+import os
+from devAbSplice.data_kaesmann import *  # provides `species_kaesmann`, `download_rna_seq`
+
+DATA_PATH = config['DATA_DIR']
+
+rule download_bam_files:
+    params:
+        download_link = lambda wildcards: download_rna_seq[wildcards.species],
+    output:
+        bamfile_dir = directory(os.path.join(DATA_PATH, '/RNA_seq_files/unsorted/{species}/')),
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 16000,
+    shell:
+        'wget -m -nd -P {output.bamfile_dir} {params.download_link}'
+
+
+rule all_bamfiles_download:
+    input:
+        expand(rules.download_bam_files.output.bamfile_dir, species='human'),

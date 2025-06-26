@@ -1,0 +1,75 @@
+import os
+import yaml
+from os import listdir
+from os.path import isfile, join
+import pathlib
+from splicemap.splice_map import SpliceMap
+from devAbSplice.data_gtex import *
+
+def splicemap5_GTEx(wildcards):
+    tissue = wildcards.tissue
+    splicemaps = []
+    for t in gtex_tissues:
+        if t in kaesmann_gtex_map[tissue]:
+            splicemaps.append(config['splicemap_GTEx']['psi5'].format(tissue_GTEx=t))
+    splicemaps = [str(x) for x in splicemaps]
+    return splicemaps
+
+def splicemap3_GTEx(wildcards):
+    tissue = wildcards.tissue
+    splicemaps = []
+    for t in gtex_tissues:
+        if t in kaesmann_gtex_map[tissue]:
+            splicemaps.append(config['splicemap_GTEx']['psi3'].format(tissue_GTEx=t))
+    splicemaps = [str(x) for x in splicemaps]
+    return splicemaps
+
+
+rule mmsplice_splicemap_GTEx:
+    input:
+        vcf = config['devAS_vcf'],
+        fasta = config['fasta'],
+        splicemap_5 = splicemap5_GTEx,
+        splicemap_3 = splicemap3_GTEx
+    conda: '../envs/environment_absplice.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 64000,
+        threads = 4
+    output:
+        result = directory(config['splicing_pred_GTEx']['mmsplice_splicemap'])
+    script:
+        "../mmsplice_splicemap.py"
+
+
+rule absplice_dna_GTEx:
+    input:
+        mmsplice_splicemap = config['splicing_pred_GTEx']['mmsplice_splicemap'],
+        spliceai = config['splicing_pred']['spliceai'],
+    params:
+        gene_map = config['gene_map'],
+        absplice_dna_model = config['absplice_dna_model']
+    conda: '../envs/environment_absplice.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 64000,
+        threads = 4
+    output:
+        absplice_dna = directory(config['splicing_pred_GTEx']['absplice_dna'])
+    script:
+        "../absplice_dna.py"
+
+
+rule all_predict_absplice_dna_GTEx:
+    input:
+        expand(config['splicing_pred_GTEx']['mmsplice_splicemap'],
+            chrom=chroms,
+            tissue=[*tissues_kaesmann, 'other_gtex_tissues']
+            ),
+        expand(config['splicing_pred_GTEx']['absplice_dna'],
+            chrom=chroms,
+            # chrom=[x for x in chroms if x not in ['chr1', 'chr13', 'chr14', 'chr17', 'chr18', 'chr21', 'chr22']],
+            tissue=[*tissues_kaesmann, 'other_gtex_tissues']
+            ),
+
+
+del splicemap5_GTEx
+del splicemap3_GTEx

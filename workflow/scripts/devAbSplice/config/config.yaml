@@ -1,0 +1,56 @@
+# ========== files that need to be provided by the user to run the pipeline ========
+
+# create the folder workflow/data/resources/devAbSplice/
+# in this folder add the following files/ symlinks:
+# 1) create a symlink to the gtf and fasta files:
+#       (ln -s path_to_gtf_file gtf_file)  (used gtf_file: release_34/GRCh37_mapping/gencode.v34lift37.annotation.gtf.gz)
+#       (ln -s path_to_fasta_file fasta_file) (used fasta_file: release_34/GRCh37_mapping/GRCh37.primary_assembly.genome.fa)
+# 2) create a symlink to the DROP results (ln -s path_to_DROP_results DROP)
+
+# create a folder workflow/data/resources/common/hg19/
+# in this folder add the following symlinks:
+# 1) pangolin_db (ln -s path_to_pangolin_db pangolin_db), the database can be created from here: https://github.com/tkzeng/Pangolin/tree/main 
+
+# download Supplementary_Data_9 from Mazin et. al and move it to the following path: workflow/data/resources/devAbSplice/Supplementary_Data_9.csv
+
+
+# ========== Not to be changed by user ==========
+DATA_DIR: ../../../data/
+Supplementary_Data_9_kaessmann: ../../../data/resources/devAbSplice/Supplementary_Data_9.csv
+
+gene_map: ../../../data/resources/common/GENE_MAP.tsv
+
+genome: hg19
+fasta: ../../../data/resources/devAbSplice/fasta_file
+gtf: ../../../data/resources/devAbSplice/gtf_file
+DROP: ../../../data/resources/devAbSplice/DROP/
+anno_pangolin: ../../../data/resources/common/hg19/pangolin_db
+
+
+chroms:
+  - 'chr1'
+  - 'chr2'
+  - 'chr3'
+  - 'chr4'
+  - 'chr5'
+  - 'chr6'
+  - 'chr7'
+  - 'chr8'
+  - 'chr9'
+  - 'chr10'
+  - 'chr11'
+  - 'chr12'
+  - 'chr13'
+  - 'chr14'
+  - 'chr15'
+  - 'chr16'
+  - 'chr17'
+  - 'chr18'
+  - 'chr19'
+  - 'chr20'
+  - 'chr21'  
+  - 'chr22'
+  - 'chrX'
+#   - 'chrY'
+
+

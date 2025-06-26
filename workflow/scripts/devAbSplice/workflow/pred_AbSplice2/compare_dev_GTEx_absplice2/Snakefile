@@ -1,0 +1,225 @@
+from devAbSplice.data_kaesmann import *
+
+DATA_DIR = config['DATA_DIR']
+
+
+rule get_max_over_timepoints_dev2:
+    input:
+        pred = os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/absplice2_NEW/devSpliceMaps/delta_t={delta_t}/{chrom}_AbSplice_DNA_tissue={tissue}.parquet')
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 128000,
+    output:
+        pred_max = directory(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/max_preds/absplice2_NEW/{model_name}/devSpliceMaps/tissue/delta_t={delta_t}/{chrom}_AbSplice_DNA_tissue={tissue}.parquet'))
+    script:
+        './max_pred.py'
+
+
+rule combine_max_tissues_dev2:
+    input:
+        pred = lambda wildcards: expand(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/max_preds/absplice2_NEW/{model_name}/devSpliceMaps/tissue/delta_t={delta_t}/{chrom}_AbSplice_DNA_tissue={tissue}.parquet'),
+                                        model_name=wildcards.model_name,
+                                        delta_t=wildcards.delta_t,
+                                        chrom=wildcards.chrom,
+                                        tissue=tissues_kaesmann)
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 128000,
+    output:
+        pred_all = directory(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/max_preds/absplice2_NEW/{model_name}/devSpliceMaps/all/delta_t={delta_t}/{chrom}_AbSplice_DNA.parquet'))
+    script:
+        './combine_max_tissues.py'
+
+
+rule get_max_over_timepoints_GTEx2:
+    input:
+        pred = os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/absplice2_NEW/GTExSpliceMaps/{chrom}_AbSplice_DNA_tissue={tissue}.parquet')
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 128000,
+    output:
+        pred_max = directory(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/max_preds/absplice2_NEW/{model_name}/GTExSpliceMaps/tissue/{chrom}_AbSplice_DNA_tissue={tissue}.parquet'))
+    script:
+        './max_pred_GTEx.py'
+
+
+rule combine_max_tissues_GTEx2:
+    input:
+        pred = lambda wildcards: expand(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/max_preds/absplice2_NEW/{model_name}/GTExSpliceMaps/tissue/{chrom}_AbSplice_DNA_tissue={tissue}.parquet'),
+                                        model_name=wildcards.model_name,
+                                        chrom=wildcards.chrom,
+                                        tissue=[*tissues_kaesmann, 'other_gtex_tissues'])
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 128000,
+    output:
+        pred_all = directory(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/max_preds/absplice2_NEW/{model_name}/GTExSpliceMaps/all/{chrom}_AbSplice_DNA.parquet'))
+    script:
+        './combine_max_tissues_GTEx.py'
+
+
+rule combine_max_dev_GTEx2:
+    input:
+        dev = os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/max_preds/absplice2_NEW/{model_name}/devSpliceMaps/all/delta_t={delta_t}/{chrom}_AbSplice_DNA.parquet'),
+        gtex = os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/max_preds/absplice2_NEW/{model_name}/GTExSpliceMaps/all/{chrom}_AbSplice_DNA.parquet'),
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 128000,
+    output:
+        combined = directory(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/max_preds/absplice2_NEW/{model_name}/max_preds_dev_GTEx/delta_t={delta_t}/{chrom}_AbSplice_DNA.parquet'))
+    script:
+        './combine_max_dev_GTEx.py'
+
+
+rule combine_max_dev_GTEx2_hg38_coords:
+    input:
+        combined = os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/max_preds/absplice2_NEW/{model_name}/max_preds_dev_GTEx/delta_t={delta_t}/{chrom}_AbSplice_DNA.parquet'),
+        var_lift = os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/absplice2_NEW/all_var_lift/{chrom}_var_lift.parquet')
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 64000,
+    output:
+        combined_hg38 = directory(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/max_preds/absplice2_NEW/{model_name}/max_preds_dev_GTEx_hg38/delta_t={delta_t}/{chrom}_AbSplice_DNA.parquet'))
+    script:
+        './add_hg38_coords.py'
+
+
+# add rule to save dev specific variants
+rule dev_specific_variants_to_vcf:
+    input:
+        combined = os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/max_preds/absplice2_NEW/{model_name}/max_preds_dev_GTEx/delta_t={delta_t}/{chrom}_AbSplice_DNA.parquet')
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 64000,
+    params:
+        high_cutoff = 0.2,
+        low_cutoff = 0.05,
+        chr_annotation='chr',
+        genome_version='hg19'
+    output:
+        variants = directory(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/max_preds/absplice2_NEW/{model_name}/max_preds_dev_GTEx_vcf/delta_t={delta_t}/{chrom}_AbSplice_DNA.parquet'))
+    script:
+        './dev_specific_variants_to_vcf.py'
+
+
+
+rule pred_absplice2_mmsplice_pangolin_GTEx_full_info:
+    input:
+        variants = os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/max_preds/absplice2_NEW/{model_name}/max_preds_dev_GTEx_vcf/delta_t={delta_t}/{chrom}_AbSplice_DNA.parquet'),
+        pangolin_splicemap = os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/pangolin_splicemaps_NEW/GTExSpliceMaps/{chrom}_AbSplice_DNA_tissue={tissue}.parquet'),
+        mmsplice_splicemap = os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/mmsplice_splicemap/GTExSpliceMaps/{chrom}_MMSplice_SpliceMap_tissue={tissue}.parquet'),
+        splicemap_5 = splicemap5_GTEx,
+        splicemap_3 = splicemap3_GTEx,
+    params:
+        absplice_models=config_static['absplice_models_new'],
+        subset_cols = False,
+        subset_predictions = False,
+        annotate_score_category = True,
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 64000,
+        threads = 1
+    output:
+        absplice_dna_pred = directory(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/absplice2_NEW_full_info/{model_name}/GTExSpliceMaps/delta_t={delta_t}/{chrom}_AbSplice_DNA_tissue={tissue}.parquet'))
+    script:
+        "../../../../../scripts/common/splicing_pred/absplice2_pangolin_tissue_mmsplice_splicemap.py"
+
+
+rule pred_absplice2_mmsplice_pangolin_devAS_full_info:
+    input:
+        variants = os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/max_preds/absplice2_NEW/{model_name}/max_preds_dev_GTEx_vcf/delta_t={delta_t}/{chrom}_AbSplice_DNA.parquet'),
+        pangolin_splicemap = os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/pangolin_splicemaps_NEW/devSpliceMaps/delta_t={delta_t}/{chrom}_AbSplice_DNA_tissue={tissue}.parquet'),
+        mmsplice_splicemap = os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/mmsplice_splicemap/devSpliceMaps/delta_t={delta_t}/{chrom}_MMSplice_SpliceMap_tissue={tissue}.parquet'),
+        splicemap_5 = expand(os.path.join(
+            DATA_DIR, 'results/devAbSplice/junction_annotation/splicemap/splicemap_tissue_time/',
+            'delta_t={delta_t}/splicemap_tissue={tissue}_timepoint={timepoint}_psi5.csv.gz'),
+            tissue='{tissue}', delta_t='{delta_t}', timepoint=timepoints_kaesmann),
+        splicemap_3 = expand(os.path.join(
+            DATA_DIR, 'results/devAbSplice/junction_annotation/splicemap/splicemap_tissue_time/',
+            'delta_t={delta_t}/splicemap_tissue={tissue}_timepoint={timepoint}_psi3.csv.gz'),
+            tissue='{tissue}', delta_t='{delta_t}', timepoint=timepoints_kaesmann),
+    params:
+        absplice_models=config_static['absplice_models_new'],
+        subset_cols = False,
+        subset_predictions = False,
+        annotate_score_category = True,
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 64000,
+        threads = 1
+    output:
+        absplice_dna_pred = directory(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/absplice2_NEW_full_info/{model_name}/devSpliceMaps/delta_t={delta_t}/{chrom}_AbSplice_DNA_tissue={tissue}.parquet'))
+    script:
+        "../../../../../scripts/common/splicing_pred/absplice2_pangolin_tissue_mmsplice_splicemap.py"
+
+
+rule all_combine_dev_GTEx2:
+    input:
+        expand(rules.combine_max_dev_GTEx2.output,
+            delta_t=[0,1],
+            chrom=config['chroms'],
+            tissue=tissues_kaesmann,
+            model_name=['model_27']
+            ),
+        expand(rules.dev_specific_variants_to_vcf.output,
+            delta_t=[0,1],
+            chrom=config['chroms'],
+            model_name=['model_27']
+            ),
+        expand(rules.pred_absplice2_mmsplice_pangolin_GTEx_full_info.output,
+            delta_t=[0,1],
+            chrom=config['chroms'],
+            tissue=tissues_kaesmann,
+            model_name=['model_27']
+            ),
+        expand(rules.pred_absplice2_mmsplice_pangolin_devAS_full_info.output,
+            delta_t=[0,1],
+            chrom=config['chroms'],
+            tissue=tissues_kaesmann,
+            model_name=['model_27']
+            ),
+        expand(rules.combine_max_dev_GTEx2_hg38_coords.output,
+            delta_t=[0,1],
+            chrom=config['chroms'],
+            tissue=tissues_kaesmann,
+            model_name=['model_27']
+        )

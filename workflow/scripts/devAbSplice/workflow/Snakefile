@@ -1,0 +1,32 @@
+import os
+import yaml
+
+SNAKEMAKE_DIR = os.path.dirname(workflow.snakefile)
+config_static_path = f"{SNAKEMAKE_DIR}/../../../config/config_static_structure.yaml"
+with open(config_static_path, "r") as fd:
+    config_static = yaml.safe_load(fd)
+
+config_precomputed_path = f"{SNAKEMAKE_DIR}/../../../config/config_provided_files.yaml"
+with open(config_precomputed_path, "r") as fd:
+    config_precomputed = yaml.safe_load(fd)
+
+configfile: "../config/config.yaml"
+
+include: "./bam_files/download_bam/Snakefile"
+include: "./bam_files/Snakefile"
+include: "./SpliceMaps/Snakefile"
+include: "./devAS_events/Snakefile"
+include: "./pred_AbSplice/Snakefile"
+include: "./pred_AbSplice2/Snakefile"
+include: "./pred_AbSplice2/compare_dev_GTEx_absplice2/Snakefile"
+
+rule all_workflows:
+    input:
+        rules.all_bamfiles_download.input, # run this first in isolation, once all files downloaded comment out the rest
+
+        rules.all_bamfiles.input,
+        rules.all_splicemaps.input,
+        rules.all_devAS_events.input,
+        rules.all_predict_absplice_dna.input,
+        rules.all_predict_absplice2.input,
+        rules.all_combine_dev_GTEx2.input,

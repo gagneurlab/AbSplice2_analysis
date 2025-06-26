@@ -1,0 +1,221 @@
+'''
+use conda env 'splicemap_dev' to create the splicemaps
+'''
+
+import pandas as pd
+import os
+
+data_dir_gtex_v8 = '../'
+data_dir_input = '../../../data/results/gtex_v8/junction_annotation/'
+
+splicemap_tissues = [
+    'Adipose_Subcutaneous',
+    'Adipose_Visceral_Omentum',
+    'Adrenal_Gland',
+    'Artery_Aorta',
+    'Artery_Coronary',
+    'Artery_Tibial',
+    'Brain_Amygdala',
+    'Brain_Anterior_cingulate_cortex_BA24',
+    'Brain_Caudate_basal_ganglia',
+    'Brain_Cerebellar_Hemisphere',
+    'Brain_Cerebellum',
+    'Brain_Cortex',
+    'Brain_Frontal_Cortex_BA9',
+    'Brain_Hippocampus',
+    'Brain_Hypothalamus',
+    'Brain_Nucleus_accumbens_basal_ganglia',
+    'Brain_Putamen_basal_ganglia',
+    'Brain_Spinal_cord_cervical_c_1',
+    'Brain_Substantia_nigra',
+    'Breast_Mammary_Tissue',
+    'Cells_Cultured_fibroblasts',
+    'Cells_EBV_transformed_lymphocytes',
+    'Colon_Sigmoid',
+    'Colon_Transverse',
+    'Esophagus_Gastroesophageal_Junction',
+    'Esophagus_Mucosa',
+    'Esophagus_Muscularis',
+    'Heart_Atrial_Appendage',
+    'Heart_Left_Ventricle',
+    'Kidney_Cortex',
+    'Liver',
+    'Lung',
+    'Minor_Salivary_Gland',
+    'Muscle_Skeletal',
+    'Nerve_Tibial',
+    'Ovary',
+    'Pancreas',
+    'Pituitary',
+    'Prostate',
+    'Skin_Not_Sun_Exposed_Suprapubic',
+    'Skin_Sun_Exposed_Lower_leg',
+    'Small_Intestine_Terminal_Ileum',
+    'Spleen',
+    'Stomach',
+    'Testis',
+    'Thyroid',
+    'Uterus',
+    'Vagina',
+    'Whole_Blood',
+]
+
+chroms = [
+    'chr1',
+    'chr2',
+    'chr3',
+    'chr4',
+    'chr5',
+    'chr6',
+    'chr7',
+    'chr8',
+    'chr9',
+    'chr10',
+    'chr11',
+    'chr12',
+    'chr13',
+    'chr14',
+    'chr15',
+    'chr16',
+    'chr17',
+    'chr18',
+    'chr19',
+    'chr20',
+    'chr21',
+    'chr22',
+    #   - 'chrX'
+]
+
+rule all:
+    input:
+        expand(os.path.join(data_dir_input, 'splicemap_subsampling/{tissue}_{num_samples}_{i}_splicemap_psi5.csv.gz'),
+                tissue=splicemap_tissues, num_samples=[-1], i=range(1)),
+        expand(os.path.join(data_dir_input, 'splicemap_subsampling/{tissue}_{num_samples}_{i}_splicemap_psi5.csv.gz'),
+                tissue=splicemap_tissues, num_samples=[4], i=range(10)),
+        expand(os.path.join(data_dir_input, 'splicemap_subsampling/{tissue}_{num_samples}_{i}_splicemap_psi5.csv.gz'),
+                tissue=['Liver'], num_samples=[-1, 2, 4, 8, 16, 32, 64, 128], i=range(10)),
+        expand(os.path.join(data_dir_gtex_v8, '../../data/results/gtex_v8/splicing_predictions/postprocess/mmsplice_splicemap_subsampled/{vcf_id}_mmsplice_splicemap_subsampled_{tissue}.parquet'),
+                vcf_id=chroms, tissue=splicemap_tissues),
+        expand(os.path.join(data_dir_gtex_v8, '../../data/results/gtex_v8/splicing_predictions/postprocess/absplice_subsampled/classifier={classifier}/{feature_string}/abs_features={abs_features}/absplice_subsampled_{i}_{fold}_absplice.parquet'),
+                classifier='interpretml', abs_features=False, feature_string='delta_logit_psi__delta_psi__delta_score__splice_site_is_expressed', i=range(10), fold=range(5)),
+        expand(os.path.join(data_dir_gtex_v8, '../../data/results/gtex_v8/benchmark/benchmark_results_absplice_subsampled/classifier={classifier}/{feature_string}/abs_features={abs_features}/performance/dna/all_tissues/performance_all_tissues_df_{i}.csv'),
+                classifier='interpretml', abs_features=False, feature_string='delta_logit_psi__delta_psi__delta_score__splice_site_is_expressed', i=range(10)),
+
+
+rule generate_splicemap:
+    input:
+        count_table_updated = os.path.join(data_dir_input, 'count_table/samples_updated/{tissue}_count_table_updated.csv'),
+        gtf_file = '../../../data/resources/gtex_v8/gtf_file',
+        train_test_split = os.path.join(data_dir_input, 'train_test/matrix/{tissue}_test.csv'),
+        gene_expression = os.path.join(data_dir_input, 'gene_tpm_wide_with_gene_name.csv'),
+    params:
+        method = 'kn',
+        event_filter = 'median_cutoff',
+        percentile = 95,
+        percentile_min_read = 1,
+        median_cutoff = 0,
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 128000,
+        ntasks = 1,
+        threads = 1
+    output:
+        splicemap_psi5 = os.path.join(data_dir_input, 'splicemap_subsampling/{tissue}_{num_samples}_{i}_splicemap_psi5.csv.gz'),
+        splicemap_psi3 = os.path.join(data_dir_input, 'splicemap_subsampling/{tissue}_{num_samples}_{i}_splicemap_psi3.csv.gz'),
+    script:
+        "./generate_splicemap_subsampled.py"
+    
+
+# MMSplice + SpliceMap
+rule splicing_pred_mmsplice_splicemap:
+    input:
+        vcf = os.path.join(data_dir_gtex_v8, '../../data/resources/gtex_v8/vcf_normalized/{vcf_id}.vcf.gz'),
+        fasta = '../../../data/resources/gtex_v8/fasta_file',
+        splicemap_5 = expand(os.path.join(data_dir_input, 'splicemap_subsampling/{tissue}_{num_samples}_{i}_splicemap_psi5.csv.gz'),
+                             tissue='{tissue}', num_samples=4, i=range(10)),
+        splicemap_3 = expand(os.path.join(data_dir_input, 'splicemap_subsampling/{tissue}_{num_samples}_{i}_splicemap_psi3.csv.gz'),
+                             tissue='{tissue}', num_samples=4, i=range(10)),
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 64000,
+        threads = 4
+    output:
+        result = directory(os.path.join(data_dir_gtex_v8, '../../data/results/gtex_v8/splicing_predictions/raw_pred/mmsplice_splicemap_subsampled/{vcf_id}_mmsplice_splicemap_subsampled_{tissue}.parquet'))
+    script:
+        "../../common/splicing_pred/mmsplice_splicemap.py"
+
+
+rule gene_tpm_subsampling:
+    input:
+        gene_tpm = os.path.join(data_dir_gtex_v8, '../../data/results/gtex_v8/junction_annotation/gene_tpm.csv'),
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 64000,
+    output:
+        gene_tpm_subsampled = os.path.join(data_dir_gtex_v8, '../../data/results/gtex_v8/junction_annotation/gene_tpm_subsampled.csv')
+    script:
+        "./gene_tpm_subsampling.py"
+
+
+rule splicing_result_postprocess_mmsplice_splicemap:
+    input:
+        model = os.path.join(data_dir_gtex_v8, '../../data/results/gtex_v8/splicing_predictions/raw_pred/mmsplice_splicemap_subsampled/{vcf_id}_mmsplice_splicemap_subsampled_{tissue}.parquet'),
+        gene_tpm = os.path.join(data_dir_gtex_v8, '../../data/results/gtex_v8/junction_annotation/gene_tpm_subsampled.csv'),
+        var_samples_df = os.path.join(data_dir_gtex_v8, '../../data/results/gtex_v8/vcf_annotation/rare_vars/qual_filtered/{vcf_id}_vcf_annotation.csv'),
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 64000,
+        threads = 1
+    output:
+        model_postprocess = directory(os.path.join(data_dir_gtex_v8, '../../data/results/gtex_v8/splicing_predictions/postprocess/mmsplice_splicemap_subsampled/{vcf_id}_mmsplice_splicemap_subsampled_{tissue}.parquet'))
+    script:
+        "../../common/splicing_result/postprocess_preds/mmsplice_splicemap.py"
+
+
+rule predict_absplice:
+    input:
+        mmsplice_splicemap = expand(os.path.join(data_dir_gtex_v8, '../../data/results/gtex_v8/splicing_predictions/postprocess/mmsplice_splicemap_subsampled/{vcf_id}_mmsplice_splicemap_subsampled_{tissue}.parquet'),
+                                    vcf_id=chroms, tissue=splicemap_tissues),
+        model = '../../../data/results/gtex_v8/splicing_predictions/raw_pred/absplice/absplice_training/5_fold_crossval/classifier={classifier}/{feature_string}/abs_features={abs_features}/cross_val={fold}.pkl',
+        results_training = '../../../data/results/gtex_v8/splicing_predictions/raw_pred/absplice/absplice_training/5_fold_crossval/classifier={classifier}/{feature_string}/abs_features={abs_features}/results_all.csv',
+    conda: 'absplice_paper'
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 256000,
+        threads = 1
+    output:
+        absplice = directory(os.path.join(data_dir_gtex_v8, '../../data/results/gtex_v8/splicing_predictions/postprocess/absplice_subsampled/classifier={classifier}/{feature_string}/abs_features={abs_features}/absplice_subsampled_{i}_{fold}_absplice.parquet'))
+    script:
+        "./predict_absplice_from_folds.py"
+
+
+rule performance_dna_all_tissues:
+    input:
+        benchmark = expand(os.path.join(
+            data_dir_gtex_v8, 
+            '../../data/results/gtex_v8/benchmark', 
+            'benchmark_results/classifier={classifier}/{feature_string}/abs_features={abs_features}/',
+            'combined_benchmark/dna/{vcf_id}_tissue={tissue}_combined_benchmark_dna.parquet'),
+            vcf_id=chroms, tissue=splicemap_tissues,
+            classifier='{classifier}', feature_string='{feature_string}', 
+            event_filter='{event_filter}', abs_features='{abs_features}'),
+        absplice_subsampled = expand(os.path.join(
+            data_dir_gtex_v8, 
+            '../../data/results/gtex_v8/splicing_predictions/postprocess/absplice_subsampled/classifier={classifier}/{feature_string}/abs_features={abs_features}/absplice_subsampled_{i}_{fold}_absplice.parquet'),
+            classifier='{classifier}', feature_string='{feature_string}', 
+            abs_features='{abs_features}', i='{i}', fold=range(5)),
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 64000,
+    params:
+        subset_tissue = False,
+    output:
+        df_performance = os.path.join(
+            data_dir_gtex_v8, 
+            '../../data/results/gtex_v8/benchmark', 
+            'benchmark_results_absplice_subsampled/classifier={classifier}/{feature_string}/abs_features={abs_features}/',
+            'performance/dna/all_tissues/performance_all_tissues_df_{i}.csv'
+            ),
+        aps_performance = os.path.join(
+            data_dir_gtex_v8, 
+            '../../data/results/gtex_v8/benchmark', 
+            'benchmark_results_absplice_subsampled/classifier={classifier}/{feature_string}/abs_features={abs_features}/',
+            'performance/dna/all_tissues/performance_all_tissues_aps_{i}.pkl'
+            ),
+    script:
+        "./performance_dna.py"
+

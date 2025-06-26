@@ -1,0 +1,49 @@
+# workflow/
+# workflow/scripts
+
+# exclude specific files
+workflow/notebooks/correlation_splicemaps.ipynb
+workflow/_data/hugo_symbol_to_ENSG_mapping.tsv
+workflow/config/config_all_variants_hg38.yaml
+workflow/config/config_all_variants_hg38_dev.yaml
+# workflow/config/config_gvex.yaml
+
+workflow/scripts/devAbSplice/environment.yaml
+workflow/scripts/devAbSplice/environment_variant_combinator.yaml
+figures_R/SI_models_struggle_to_predict_tissue_specific_sites.R
+
+
+.gitignore
+workflow/notebooks/_paper_figures.ipynb
+workflow/scripts/all_variants/
+workflow/config/_config_provided_files.yaml
+
+/envs/
+/__snakemake_scripts/
+
+workflow/notebooks
+
+# Ignore symlinked data folder
+workflow/data
+
+# Python cache and junk
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+.snakemake/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Optional: ignore conda or venv environments
+.env/
+.venv/
+env/
+venv/

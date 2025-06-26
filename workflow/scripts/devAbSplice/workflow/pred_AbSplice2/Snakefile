@@ -1,0 +1,225 @@
+import os
+import yaml
+from os import listdir
+from os.path import isfile, join
+import pathlib
+from devAbSplice.data_kaesmann import *
+from devAbSplice.data_gtex import *
+
+DATA_DIR = config['DATA_DIR']
+
+# Pangolin
+rule splicing_pred_pangolin:
+    input:
+        vcf = os.path.join(DATA_DIR, 'results/devAbSplice/devAS_vcf/devAS_{chrom}.vcf'),
+        fasta = config['fasta'],
+        anno = config['anno_pangolin']
+    # conda: 'link_to_yaml' # TODO: need to implement
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 16000,
+        threads = 1,
+        gpu = 1,
+    output:
+        result = os.path.join(DATA_DIR, 'results/splicing_pred/pangolin/raw/{chrom}_pangolin.vcf'),
+    shell:
+        'pangolin -m True -d 50 {input.vcf} {input.fasta} {input.anno} {output.result}'
+
+    
+rule splicing_result_postprocess_pangolin:
+    input:
+        model = os.path.join(DATA_DIR, 'results/splicing_pred/pangolin/raw/{chrom}_pangolin.vcf'),
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 64000,
+        threads = 1
+    output:
+        model_postprocess = directory(os.path.join(DATA_DIR, 'results/splicing_pred/pangolin/postprocess/{chrom}_pangolin.parquet'))
+    script:
+         "../../../../scripts/common/splicing_result/postprocess_preds/pangolin.py"
+
+
+# ============ devAS =========================
+
+rule pred_pangolin_splicemaps_devAS:
+    input:
+        pred_pangolin = os.path.join(DATA_DIR, 'results/splicing_pred/pangolin/postprocess/{chrom}_pangolin.parquet'),
+        splicemap_5 = expand(os.path.join(
+            DATA_DIR, 'results/devAbSplice/junction_annotation/splicemap/splicemap_tissue_time/',
+            'delta_t={delta_t}/splicemap_tissue={tissue}_timepoint={timepoint}_psi5.csv.gz'),
+            tissue='{tissue}', delta_t='{delta_t}', timepoint=timepoints_kaesmann),
+        splicemap_3 = expand(os.path.join(
+            DATA_DIR, 'results/devAbSplice/junction_annotation/splicemap/splicemap_tissue_time/',
+            'delta_t={delta_t}/splicemap_tissue={tissue}_timepoint={timepoint}_psi3.csv.gz'),
+            tissue='{tissue}', delta_t='{delta_t}', timepoint=timepoints_kaesmann),
+    params:
+        subset_cols = True
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 64000,
+        threads = 1
+    output:
+        pangolin_splicemaps = directory(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/pangolin_splicemaps_NEW/devSpliceMaps/delta_t={delta_t}/{chrom}_AbSplice_DNA_tissue={tissue}.parquet'))
+    script:
+        "../../../../scripts/common/splicing_pred/pangolin_join_splicemap_info.py"
+
+
+rule pred_absplice2_mmsplice_pangolin_devAS:
+    input:
+        pangolin_splicemap = os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/pangolin_splicemaps_NEW/devSpliceMaps/delta_t={delta_t}/{chrom}_AbSplice_DNA_tissue={tissue}.parquet'),
+        mmsplice_splicemap = os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/mmsplice_splicemap/devSpliceMaps/delta_t={delta_t}/{chrom}_MMSplice_SpliceMap_tissue={tissue}.parquet'),
+        splicemap_5 = expand(os.path.join(
+            DATA_DIR, 'results/devAbSplice/junction_annotation/splicemap/splicemap_tissue_time/',
+            'delta_t={delta_t}/splicemap_tissue={tissue}_timepoint={timepoint}_psi5.csv.gz'),
+            tissue='{tissue}', delta_t='{delta_t}', timepoint=timepoints_kaesmann),
+        splicemap_3 = expand(os.path.join(
+            DATA_DIR, 'results/devAbSplice/junction_annotation/splicemap/splicemap_tissue_time/',
+            'delta_t={delta_t}/splicemap_tissue={tissue}_timepoint={timepoint}_psi3.csv.gz'),
+            tissue='{tissue}', delta_t='{delta_t}', timepoint=timepoints_kaesmann),
+    params:
+        absplice_models=config_static['absplice_models_new'],
+        subset_cols = True,
+        subset_predictions = True,
+        annotate_score_category = False,
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 64000,
+        threads = 1
+    output:
+        absplice_dna_pred = directory(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/absplice2_NEW/devSpliceMaps/delta_t={delta_t}/{chrom}_AbSplice_DNA_tissue={tissue}.parquet'))
+    script:
+        "../../../../scripts/common/splicing_pred/absplice2_pangolin_tissue_mmsplice_splicemap.py"
+
+
+# ============ GTEx =========================
+
+genome = config['genome']
+def splicemap5_GTEx(wildcards):
+    tissue = wildcards.tissue
+    splicemaps = []
+    for t in gtex_tissues:
+        if t in kaesmann_gtex_map[tissue]:
+            splicemaps.append(os.path.join(DATA_DIR, 'results/splicemap/{genome}/{tissue_gtex}_splicemap_psi5.csv.gz').format(tissue_gtex=t, genome=genome))
+    splicemaps = [str(x) for x in splicemaps]
+    return splicemaps
+
+def splicemap3_GTEx(wildcards):
+    tissue = wildcards.tissue
+    splicemaps = []
+    for t in gtex_tissues:
+        if t in kaesmann_gtex_map[tissue]:
+            splicemaps.append(os.path.join(DATA_DIR, 'results/splicemap/{genome}/{tissue_gtex}_splicemap_psi3.csv.gz').format(tissue_gtex=t, genome=genome))
+    splicemaps = [str(x) for x in splicemaps]
+    return splicemaps
+
+
+rule pred_pangolin_splicemaps_GTEx:
+    input:
+        pred_pangolin = os.path.join(DATA_DIR, 'results/splicing_pred/pangolin/postprocess/{chrom}_pangolin.parquet'),
+        splicemap_5 = splicemap5_GTEx,
+        splicemap_3 = splicemap3_GTEx,
+    params:
+        subset_cols = True,
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 64000,
+        threads = 1
+    output:
+        pangolin_splicemaps = directory(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/pangolin_splicemaps_NEW/GTExSpliceMaps/{chrom}_AbSplice_DNA_tissue={tissue}.parquet'))
+    script:
+        "../../../../scripts/common/splicing_pred/pangolin_join_splicemap_info.py"
+
+
+rule pred_absplice2_mmsplice_pangolin_GTEx:
+    input:
+        pangolin_splicemap = os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/pangolin_splicemaps_NEW/GTExSpliceMaps/{chrom}_AbSplice_DNA_tissue={tissue}.parquet'),
+        mmsplice_splicemap = os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/mmsplice_splicemap/GTExSpliceMaps/{chrom}_MMSplice_SpliceMap_tissue={tissue}.parquet'),
+        splicemap_5 = splicemap5_GTEx,
+        splicemap_3 = splicemap3_GTEx,
+    params:
+        absplice_models=config_static['absplice_models_new'],
+        subset_cols = True,
+        subset_predictions = True,
+        annotate_score_category = False,
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 64000,
+        threads = 1
+    output:
+        absplice_dna_pred = directory(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/absplice2_NEW/GTExSpliceMaps/{chrom}_AbSplice_DNA_tissue={tissue}.parquet'))
+    script:
+        "../../../../scripts/common/splicing_pred/absplice2_pangolin_tissue_mmsplice_splicemap.py"
+
+
+# ============ liftover vars =========================
+
+rule liftover_vars_devAS:
+    input:
+        absplice_dna_pred =  expand(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/absplice2_NEW/devSpliceMaps/delta_t={delta_t}/{chrom}_AbSplice_DNA_tissue={tissue}.parquet'),
+            delta_t=[0,1], chrom='{chrom}', tissue=['brain', 'cerebellum', 'heart', 'kidney', 'liver', 'ovary', 'testis'], parts=range(10))
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 128000,
+        threads = 1
+    output:
+        var_lift = directory(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/absplice2_NEW/devSpliceMaps/var_lift/{chrom}_var_lift.parquet'))
+    script:
+        "./var_liftover.py"
+
+
+rule liftover_vars_GTEx:
+    input:
+        absplice_dna_pred =  expand(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/absplice2_NEW/GTExSpliceMaps/{chrom}_AbSplice_DNA_tissue={tissue}.parquet'),
+            chrom='{chrom}', tissue=[*tissues_kaesmann, 'other_gtex_tissues'], parts=range(10))
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 128000,
+        threads = 1
+    output:
+        var_lift = directory(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/absplice2_NEW/GTExSpliceMaps/var_lift/{chrom}_var_lift.parquet'))
+    script:
+        "./var_liftover.py"
+
+
+rule liftover_vars_all:
+    input:
+        var_lift_gtex = os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/absplice2_NEW/GTExSpliceMaps/var_lift/{chrom}_var_lift.parquet'),
+        var_lift_dev = os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/absplice2_NEW/devSpliceMaps/var_lift/{chrom}_var_lift.parquet')
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 128000,
+        threads = 1
+    output:
+        var_lift = directory(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/absplice2_NEW/all_var_lift/{chrom}_var_lift.parquet'))
+    script:
+        "./var_liftover_combine.py"
+
+
+# ============ all rules =========================
+rule all_predict_absplice2:
+    input:
+        expand(os.path.join(
+            DATA_DIR, 'results/devAbSplice/',
+            'splicing_predictions/raw_pred/absplice2_NEW/all_var_lift/{chrom}_var_lift.parquet'),
+            chrom=config['chroms'])

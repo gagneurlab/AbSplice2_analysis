@@ -1,0 +1,85 @@
+import os
+from devAbSplice.data_kaesmann import *
+
+DATA_DIR = config['DATA_DIR']
+
+def analysis(wildcards):
+    species_map = {
+        'human': 'human'
+    }
+    return 'raw-local-' + species_map[wildcards['species']]
+
+def fds(wildcards):
+    return os.path.join(config['DROP'], 'processed_data/aberrant_splicing/datasets/savedObjects/') + analysis(wildcards) + '/fds-object.RDS'
+
+
+rule fraser_count_table:
+    input:
+        fds = fds
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 32000
+    params:
+        fraser_working_dir = os.path.join(config['DROP'], 'processed_data/aberrant_splicing/datasets/'),
+        analysis = analysis
+    output:
+        raw_count_table = os.path.join(DATA_DIR, 'results/devAbSplice/splicemap/count_table/all/{species}_count_table_all.csv')
+    script: 
+        "./annotate_fraser.R"
+
+
+rule copy_count_table:
+    input:
+        raw_count_table = expand(os.path.join(DATA_DIR, 'results/devAbSplice/splicemap/count_table/all/{species}_count_table_all.csv'), species='human')
+    output:
+        count_table = os.path.join(DATA_DIR, 'results/devAbSplice/splicemap/count_table/all/count_table_all.csv')
+    shell:
+        'cp {input.raw_count_table} {output.count_table}'
+
+
+rule subset_count_table:
+    input:
+        raw_count_table = os.path.join(DATA_DIR, 'results/devAbSplice/splicemap/count_table/all/count_table_all.csv')
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 128000
+    output:
+        count_table = os.path.join(DATA_DIR, 'results/devAbSplice/junction_annotation/count_table/tissue_time/delta_t={delta_t}/count_table_tissue={tissue}_timepoint={timepoint}.csv')
+    script:
+        './subset_count_table.py'
+
+
+rule splicemap_species_tissue_time:
+    input:
+        gtf_file = config['gtf'],
+        fasta_file = config['fasta'],
+        ct = os.path.join(DATA_DIR, 'results/devAbSplice/junction_annotation/count_table/tissue_time/delta_t={delta_t}/count_table_tissue={tissue}_timepoint={timepoint}.csv'),
+    conda: 'splicemap_dev'
+    params:
+        method = 'kn',
+        event_filter = 'median_cutoff',
+        percentile = 95,
+        percentile_min_read = 1,
+        median_n_cutoff = 0,
+    resources:
+        mem_mb = lambda wildcards, attempt: attempt * 128000
+    output:
+        splicemap_psi5 = os.path.join(DATA_DIR, 'results/devAbSplice/junction_annotation/splicemap/splicemap_tissue_time/delta_t={delta_t}/splicemap_tissue={tissue}_timepoint={timepoint}_psi5.csv.gz'),
+        splicemap_psi3 = os.path.join(DATA_DIR, 'results/devAbSplice/junction_annotation/splicemap/splicemap_tissue_time/delta_t={delta_t}/splicemap_tissue={tissue}_timepoint={timepoint}_psi3.csv.gz'),
+    script:
+        './splicemap_species_tissue_time.py'
+
+
+output_splicemaps = list()
+for tissue in tissues_kaesmann:
+    output_splicemaps.append(
+        expand(rules.splicemap_species_tissue_time.output.splicemap_psi5, 
+            tissue = tissue, 
+            # timepoint = species_tissue_dict[('human', tissue)],
+            timepoint = timepoints_kaesmann,
+            delta_t = [0,1]
+            )
+    )
+
+
+rule all_splicemaps:
+    input:
+        output_splicemaps,
