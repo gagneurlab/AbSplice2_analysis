@@ -23,7 +23,7 @@ DROP:
     fraser2_results: ../../data/resources/gvex/DROP/fraser2/processed_results/aberrant_splicing/results/
 
 fraser_version:
-    # - fraser2
+    - fraser2
     - fraser1
             
 filtering_params:
