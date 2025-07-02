@@ -212,6 +212,7 @@ for model_name, model_info in absplice_models.items():
         assert len(df[model_name]) == len(df)
         absplice_model_names.append(model_name)
     
+assert len(absplice_model_names) == 1
 
 def get_abs_max_rows_by_gene_chunks(df, groupby, max_col, gene_chunk_size=1000):
     all_genes = df['gene_id'].unique()
@@ -235,19 +236,16 @@ if 'subset_cols' in snakemake.params.keys() and snakemake.params['subset_cols']:
     groupby_index = ['chrom', 'start', 'end', 'ref', 'alt', 'gene_id', 'tissue']
 
     GENE_CHUNK_SIZE = 1
-    df_max = []
-    all_model_names = [
-        'delta_logit_psi', 'delta_psi', 'gain_score', 'loss_score',
-        *absplice_model_names
-    ]
-    for model in tqdm([x for x in df.columns if x in all_model_names]):
-        df_max.append(get_abs_max_rows_by_gene_chunks(df, groupby_index, model, gene_chunk_size=GENE_CHUNK_SIZE)[[model]].reset_index())
-        # df_max.append(get_abs_max_rows_by_gene_chunks(df, groupby_index, model, gene_chunk_size=GENE_CHUNK_SIZE, n_processes=snakemake.threads)[[model]].reset_index())
+    model = absplice_model_names[0]
+    merged_df = get_abs_max_rows_by_gene_chunks(df, groupby_index, model, gene_chunk_size=GENE_CHUNK_SIZE).reset_index()
     
-    merged_df = reduce(
-        lambda left, right: pd.merge(left, right, on=groupby_index, how='outer'),
-        df_max
-    )
+    merged_df = merged_df[[
+        'chrom', 'start', 'end', 'ref', 'alt', 'gene_id', 'tissue',
+        'gain_score', 'gain_pos', 'loss_score', 'loss_pos',
+        'pangolin_tissue_score', 'ref_psi_pangolin', 'median_n_pangolin',
+        'ref_psi', 'median_n', 'delta_logit_psi', 'delta_psi', 'j1_mmsplice', 'j2_mmsplice',
+        model,
+    ]]
     
     merged_df.to_parquet(
         snakemake.output['absplice_dna_pred'],

@@ -195,13 +195,20 @@ else:
     # get the correct gene ids
     df_pangolin_loss_joined = df_pangolin_loss_joined[
         (df_pangolin_loss_joined['gene_id']==df_pangolin_loss_joined['gene_id_b'])
-        & (df_pangolin_loss_joined['tissue']==df_pangolin_loss_joined['tissue_b'])
-    ].drop(columns=['gene_id_b', 'tissue_b'])
+    ].drop(columns=['gene_id_b'])
     
     df_pangolin_gain_joined = df_pangolin_gain_joined[
         (df_pangolin_gain_joined['gene_id']==df_pangolin_gain_joined['gene_id_b'])
-        & (df_pangolin_gain_joined['tissue']==df_pangolin_gain_joined['tissue_b'])
-    ].drop(columns=['gene_id_b', 'tissue_b'])
+    ].drop(columns=['gene_id_b'])
+    
+    if 'tissue_b' in df_pangolin_loss_joined.columns:
+        df_pangolin_loss_joined = df_pangolin_loss_joined[
+            (df_pangolin_loss_joined['tissue']==df_pangolin_loss_joined['tissue_b'])
+        ].drop(columns=['tissue_b'])
+    if 'tissue_b' in df_pangolin_gain_joined.columns:
+        df_pangolin_gain_joined = df_pangolin_gain_joined[
+            (df_pangolin_gain_joined['tissue']==df_pangolin_gain_joined['tissue_b'])
+        ].drop(columns=['tissue_b'])
     
     # replace -1s with NaNs
     str_cols = ['junctions', 'splice_site', 'tissue', 'event_type']
